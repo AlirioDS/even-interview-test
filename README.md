@@ -65,12 +65,6 @@ docker compose ps
 
 # API health endpoint
 curl http://localhost:3000/up
-
-# Database connection
-docker compose exec rails-api bin/rails runner "puts ActiveRecord::Base.connection.active?"
-
-# Solid Queue status
-docker compose exec rails-api bin/rails runner "puts SolidQueue::Process.count"
 ```
 
 ## API Testing
