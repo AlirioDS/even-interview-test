@@ -5,6 +5,11 @@ Rails.application.routes.draw do
   
   # API routes
   namespace :api do
+    # Public routes (no authentication required)
+    namespace :public do
+      resources :releases, only: [:index, :show]
+    end
+
     namespace :v1 do
       # Authentication routes
       scope :auth do
@@ -14,7 +19,7 @@ Rails.application.routes.draw do
         delete :logout, to: 'authentication#logout'
         get :me, to: 'authentication#me'
       end
-      
+
       # User management routes
       resources :users do
         member do
@@ -22,7 +27,7 @@ Rails.application.routes.draw do
         end
       end
 
-      # Releases routes
+      # Releases routes (authenticated)
       resources :releases, only: [:index, :show]
     end
   end
