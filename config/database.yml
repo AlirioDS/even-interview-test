@@ -1,0 +1,51 @@
+default: &default
+  adapter: postgresql
+  encoding: unicode
+  # Optimized connection pool for Rails + Solid Queue
+  pool: <%= ENV.fetch("RAILS_MAX_THREADS", 5).to_i + ENV.fetch("JOB_CONCURRENCY", 1).to_i * 3 + 5 %>
+  checkout_timeout: 5
+  reaping_frequency: 10
+  idle_timeout: 300
+  host:     <%= ENV.fetch("DATABASE_HOST", "db-postgres") %>
+  port:     <%= ENV.fetch("DATABASE_PORT", 5432) %>
+  username: <%= ENV.fetch("DATABASE_USER", "postgres") %>
+  password: <%= ENV.fetch("DATABASE_PASSWORD", "postgres") %>
+  # Performance optimizations
+  prepared_statements: true
+  advisory_locks: true
+  # Connection tuning
+  connect_timeout: 2
+  read_timeout: 10
+  write_timeout: 10
+  # Schema and search path
+  schema_search_path: "public"
+  # Application name for monitoring
+  application_name: "<%= Rails.application.class.module_parent_name.underscore %>_<%= Rails.env %>"
+
+development:
+  <<: *default
+  database: <%= ENV.fetch("DATABASE_NAME", "bd_template_dev") %>
+
+test:
+  <<: *default
+  host:     <%= ENV.fetch("DATABASE_HOST", "db-postgres") %>
+  port:     <%= ENV.fetch("DATABASE_PORT", 5432) %>
+  username: <%= ENV.fetch("TEST_DATABASE_USER", "postgres") %>
+  password: <%= ENV.fetch("TEST_DATABASE_PASSWORD", "postgres") %>
+  database: <%= ENV.fetch("TEST_DATABASE_NAME", "rails_api_test") %>
+
+production:
+  <<: *default
+  # For production, use Rails credentials (uncomment and configure):
+  # host:     <%= Rails.application.credentials.dig(:production, :database, :host) %>
+  # port:     <%= Rails.application.credentials.dig(:production, :database, :port) || 5432 %>
+  # username: <%= Rails.application.credentials.dig(:production, :database, :username) %>
+  # password: <%= Rails.application.credentials.dig(:production, :database, :password) %>
+  # database: <%= Rails.application.credentials.dig(:production, :database, :name) %>
+  
+  # Temporary fallback (change this in production):
+  host:     <%= ENV.fetch("DATABASE_HOST", "localhost") %>
+  port:     <%= ENV.fetch("DATABASE_PORT", 5432) %>
+  username: <%= ENV.fetch("DATABASE_USER", "postgres") %>
+  password: <%= ENV.fetch("DATABASE_PASSWORD", "postgres") %>
+  database: <%= ENV.fetch("DATABASE_NAME", "rails_api_production") %>
