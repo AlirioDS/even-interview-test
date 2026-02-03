@@ -21,6 +21,9 @@ Rails.application.routes.draw do
           patch :change_role
         end
       end
+
+      # Releases routes
+      resources :releases, only: [:index, :show]
     end
   end
   
