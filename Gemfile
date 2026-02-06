@@ -16,7 +16,7 @@ gem "thruster", require: false
 # Authentication & Authorization
 gem "jwt"
 gem "pundit"
-gem "bcrypt", "~> 3.1.7"
+gem "bcrypt", "~> 3.1.21"
 
 group :development, :test do
   gem "debug", platforms: %i[ mri windows ], require: "debug/prelude"
