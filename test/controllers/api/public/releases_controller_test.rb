@@ -16,17 +16,18 @@ class Api::Public::ReleasesControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
 
     json_response = JSON.parse(response.body)
-    assert json_response.key?("releases")
-    assert json_response.key?("pagination")
-    assert json_response.key?("is_private")
+    assert json_response.key?("data")
+    assert json_response.key?("links")
+    assert json_response.key?("included")
+    assert json_response.key?("meta")
   end
 
-  test "should return is_private false without authentication" do
+  test "should return authenticated false without authentication" do
     get api_public_releases_url
     assert_response :success
 
     json_response = JSON.parse(response.body)
-    assert_equal false, json_response["is_private"]
+    assert_equal false, json_response["meta"]["authenticated"]
   end
 
   test "should get show without authentication" do
@@ -35,9 +36,9 @@ class Api::Public::ReleasesControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
 
     json_response = JSON.parse(response.body)
-    assert json_response.key?("release")
-    assert json_response.key?("is_private")
-    assert_equal false, json_response["is_private"]
+    assert json_response.key?("data")
+    assert json_response.key?("meta")
+    assert_equal false, json_response["meta"]["authenticated"]
   end
 
   test "should return basic release data without authentication" do
@@ -45,21 +46,23 @@ class Api::Public::ReleasesControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
 
     json_response = JSON.parse(response.body)
-    release = json_response["releases"].first
+    release = json_response["data"].first
 
-    # Should have basic fields
+    # Should have basic fields in attributes
     assert release.key?("id")
-    assert release.key?("title")
-    assert release.key?("release_date")
-    assert release.key?("release_type")
-    assert release.key?("label")
-    assert release.key?("artists")
+    assert_equal "releases", release["type"]
+    assert release["attributes"].key?("title")
+    assert release["attributes"].key?("release_date")
+    assert release["attributes"].key?("release_type")
+    assert release["attributes"].key?("label")
+    assert release["relationships"].key?("artists")
 
-    # Should NOT have private fields
-    assert_not release.key?("catalog_number")
-    assert_not release.key?("albums")
-    assert_not release.key?("created_at")
-    assert_not release.key?("updated_at")
+    # Should NOT have private fields in attributes
+    assert_not release["attributes"].key?("catalog_number")
+    assert_not release["attributes"].key?("created_at")
+    assert_not release["attributes"].key?("updated_at")
+    # Should NOT have albums relationship
+    assert_not release["relationships"].key?("albums")
   end
 
   test "should return basic artist data without authentication" do
@@ -67,28 +70,30 @@ class Api::Public::ReleasesControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
 
     json_response = JSON.parse(response.body)
-    release = json_response["releases"].find { |r| r["artists"].any? }
-    artist = release["artists"].first
+    artists = json_response["included"].select { |r| r["type"] == "artists" }
+    assert artists.any?
+
+    artist = artists.first
 
     # Should have basic fields
     assert artist.key?("id")
-    assert artist.key?("name")
+    assert artist["attributes"].key?("name")
 
     # Should NOT have private fields
-    assert_not artist.key?("country")
-    assert_not artist.key?("role")
+    assert_not artist["attributes"].key?("country")
+    assert_not artist.key?("meta")
   end
 
   # ==========================================
   # Authenticated Access Tests
   # ==========================================
 
-  test "should return is_private true with authentication" do
+  test "should return authenticated true with authentication" do
     get api_public_releases_url, headers: @auth_headers
     assert_response :success
 
     json_response = JSON.parse(response.body)
-    assert_equal true, json_response["is_private"]
+    assert_equal true, json_response["meta"]["authenticated"]
   end
 
   test "should return full release data with authentication" do
@@ -96,19 +101,19 @@ class Api::Public::ReleasesControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
 
     json_response = JSON.parse(response.body)
-    release = json_response["releases"].first
+    release = json_response["data"].first
 
     # Should have all fields including private ones
     assert release.key?("id")
-    assert release.key?("title")
-    assert release.key?("release_date")
-    assert release.key?("release_type")
-    assert release.key?("label")
-    assert release.key?("catalog_number")
-    assert release.key?("albums")
-    assert release.key?("created_at")
-    assert release.key?("updated_at")
-    assert release.key?("artists")
+    assert release["attributes"].key?("title")
+    assert release["attributes"].key?("release_date")
+    assert release["attributes"].key?("release_type")
+    assert release["attributes"].key?("label")
+    assert release["attributes"].key?("catalog_number")
+    assert release["attributes"].key?("created_at")
+    assert release["attributes"].key?("updated_at")
+    assert release["relationships"].key?("artists")
+    assert release["relationships"].key?("albums")
   end
 
   test "should return full artist data with authentication" do
@@ -116,23 +121,26 @@ class Api::Public::ReleasesControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
 
     json_response = JSON.parse(response.body)
-    release = json_response["releases"].find { |r| r["artists"].any? }
-    artist = release["artists"].first
+    artists = json_response["included"].select { |r| r["type"] == "artists" }
+    assert artists.any?
+
+    artist = artists.first
 
     # Should have all fields including private ones
     assert artist.key?("id")
-    assert artist.key?("name")
-    assert artist.key?("country")
-    assert artist.key?("role")
+    assert artist["attributes"].key?("name")
+    assert artist["attributes"].key?("country")
+    assert artist.key?("meta")
+    assert artist["meta"].key?("role")
   end
 
-  test "show should return is_private true with authentication" do
+  test "show should return authenticated true with authentication" do
     release = releases(:ok_computer_release)
     get api_public_release_url(release), headers: @auth_headers
     assert_response :success
 
     json_response = JSON.parse(response.body)
-    assert_equal true, json_response["is_private"]
+    assert_equal true, json_response["meta"]["authenticated"]
   end
 
   test "show should return full data with authentication" do
@@ -141,11 +149,11 @@ class Api::Public::ReleasesControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
 
     json_response = JSON.parse(response.body)
-    release_data = json_response["release"]
+    release_data = json_response["data"]
 
     # Should have private fields
-    assert release_data.key?("catalog_number")
-    assert release_data.key?("albums")
+    assert release_data["attributes"].key?("catalog_number")
+    assert release_data["relationships"].key?("albums")
   end
 
   # ==========================================
@@ -157,10 +165,10 @@ class Api::Public::ReleasesControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
 
     json_response = JSON.parse(response.body)
-    releases = json_response["releases"]
+    data = json_response["data"]
 
-    releases.each do |release|
-      assert Date.parse(release["release_date"]) < Date.current
+    data.each do |release|
+      assert Date.parse(release["attributes"]["release_date"]) < Date.current
     end
   end
 
@@ -169,10 +177,10 @@ class Api::Public::ReleasesControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
 
     json_response = JSON.parse(response.body)
-    releases = json_response["releases"]
+    data = json_response["data"]
 
-    releases.each do |release|
-      assert_equal "album", release["release_type"]
+    data.each do |release|
+      assert_equal "album", release["attributes"]["release_type"]
     end
   end
 
@@ -181,10 +189,10 @@ class Api::Public::ReleasesControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
 
     json_response = JSON.parse(response.body)
-    releases = json_response["releases"]
+    data = json_response["data"]
 
-    releases.each do |release|
-      assert_equal "Columbia", release["label"]
+    data.each do |release|
+      assert_equal "Columbia", release["attributes"]["label"]
     end
   end
 
@@ -192,17 +200,16 @@ class Api::Public::ReleasesControllerTest < ActionDispatch::IntegrationTest
   # Pagination Tests
   # ==========================================
 
-  test "should include pagination without authentication" do
+  test "should include pagination links without authentication" do
     get api_public_releases_url
     assert_response :success
 
     json_response = JSON.parse(response.body)
-    pagination = json_response["pagination"]
+    links = json_response["links"]
 
-    assert pagination.key?("current_page")
-    assert pagination.key?("per_page")
-    assert pagination.key?("total_pages")
-    assert pagination.key?("total_count")
+    assert links.key?("self")
+    assert links.key?("first")
+    assert links.key?("last")
   end
 
   test "should respect per_page parameter without authentication" do
@@ -210,8 +217,7 @@ class Api::Public::ReleasesControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
 
     json_response = JSON.parse(response.body)
-    assert json_response["releases"].length <= 2
-    assert_equal 2, json_response["pagination"]["per_page"]
+    assert json_response["data"].length <= 2
   end
 
   # ==========================================
@@ -223,7 +229,8 @@ class Api::Public::ReleasesControllerTest < ActionDispatch::IntegrationTest
     assert_response :not_found
 
     json_response = JSON.parse(response.body)
-    assert_equal "Release not found", json_response["error"]
+    assert json_response.key?("errors")
+    assert_equal "Not Found", json_response["errors"].first["title"]
   end
 
   test "should handle invalid token gracefully" do
@@ -232,7 +239,6 @@ class Api::Public::ReleasesControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
 
     json_response = JSON.parse(response.body)
-    # Should still work but as unauthenticated
-    assert_equal false, json_response["is_private"]
+    assert_equal false, json_response["meta"]["authenticated"]
   end
 end

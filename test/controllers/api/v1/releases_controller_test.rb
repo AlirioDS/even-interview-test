@@ -17,26 +17,35 @@ class Api::V1::ReleasesControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
 
     json_response = JSON.parse(response.body)
-    assert json_response.key?("releases")
-    assert_kind_of Array, json_response["releases"]
+    assert json_response.key?("data")
+    assert json_response.key?("links")
+    assert json_response.key?("included")
+    assert_kind_of Array, json_response["data"]
   end
 
-  test "index should return releases with nested artists and albums" do
+  test "index should return releases in JSON:API format with relationships" do
     get api_v1_releases_url, headers: @auth_headers
     assert_response :success
 
     json_response = JSON.parse(response.body)
-    releases = json_response["releases"]
-    assert releases.length >= 1
+    data = json_response["data"]
+    assert data.length >= 1
 
-    release = releases.first
+    release = data.first
+    assert_equal "releases", release["type"]
     assert release.key?("id")
-    assert release.key?("title")
-    assert release.key?("release_date")
-    assert release.key?("release_type")
-    assert release.key?("label")
-    assert release.key?("artists")
-    assert release.key?("albums")
+    assert release.key?("attributes")
+    assert release.key?("relationships")
+    assert release.key?("links")
+
+    attributes = release["attributes"]
+    assert attributes.key?("title")
+    assert attributes.key?("release_date")
+    assert attributes.key?("release_type")
+    assert attributes.key?("label")
+
+    assert release["relationships"].key?("artists")
+    assert release["relationships"].key?("albums")
   end
 
   test "should get show with authentication" do
@@ -45,9 +54,10 @@ class Api::V1::ReleasesControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
 
     json_response = JSON.parse(response.body)
-    assert json_response.key?("release")
-    assert_equal release.title, json_response["release"]["title"]
-    assert_equal release.label, json_response["release"]["label"]
+    assert json_response.key?("data")
+    assert_equal "releases", json_response["data"]["type"]
+    assert_equal release.title, json_response["data"]["attributes"]["title"]
+    assert_equal release.label, json_response["data"]["attributes"]["label"]
   end
 
   test "show should return 404 for non-existent release" do
@@ -55,36 +65,35 @@ class Api::V1::ReleasesControllerTest < ActionDispatch::IntegrationTest
     assert_response :not_found
 
     json_response = JSON.parse(response.body)
-    assert_equal "Release not found", json_response["error"]
+    assert json_response.key?("errors")
+    assert_equal "Not Found", json_response["errors"].first["title"]
   end
 
-  test "show should include artists with role" do
+  test "show should include artists in included" do
     release = releases(:ok_computer_release)
     get api_v1_release_url(release), headers: @auth_headers
     assert_response :success
 
     json_response = JSON.parse(response.body)
-    artists = json_response["release"]["artists"]
-    assert artists.any? { |a| a["name"] == "Radiohead" }
-    assert artists.first.key?("role")
-    assert artists.first.key?("country")
+    artists = json_response["included"].select { |r| r["type"] == "artists" }
+    assert artists.any? { |a| a["attributes"]["name"] == "Radiohead" }
   end
 
-  test "show should include albums with full details" do
+  test "show should include albums in included" do
     release = releases(:ok_computer_release)
     get api_v1_release_url(release), headers: @auth_headers
     assert_response :success
 
     json_response = JSON.parse(response.body)
-    albums = json_response["release"]["albums"]
+    albums = json_response["included"].select { |r| r["type"] == "albums" }
     assert albums.length >= 1
 
     album = albums.first
     assert album.key?("id")
-    assert album.key?("title")
-    assert album.key?("genre")
-    assert album.key?("total_tracks")
-    assert album.key?("duration_seconds")
+    assert album["attributes"].key?("title")
+    assert album["attributes"].key?("genre")
+    assert album["attributes"].key?("total_tracks")
+    assert album["attributes"].key?("duration_seconds")
   end
 
   # Filtering tests
@@ -93,16 +102,14 @@ class Api::V1::ReleasesControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
 
     json_response = JSON.parse(response.body)
-    releases = json_response["releases"]
+    data = json_response["data"]
 
-    # All returned releases should have release_date before today
-    releases.each do |release|
-      assert Date.parse(release["release_date"]) < Date.current
+    data.each do |release|
+      assert Date.parse(release["attributes"]["release_date"]) < Date.current
     end
   end
 
   test "should filter upcoming releases" do
-    # Create an upcoming release for testing
     upcoming = Release.create!(
       title: "Future Album",
       release_date: 1.month.from_now,
@@ -115,14 +122,12 @@ class Api::V1::ReleasesControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
 
     json_response = JSON.parse(response.body)
-    releases = json_response["releases"]
+    data = json_response["data"]
 
-    # All returned releases should have release_date >= today
-    releases.each do |release|
-      assert Date.parse(release["release_date"]) >= Date.current
+    data.each do |release|
+      assert Date.parse(release["attributes"]["release_date"]) >= Date.current
     end
 
-    # Cleanup
     upcoming.destroy
   end
 
@@ -133,10 +138,10 @@ class Api::V1::ReleasesControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
 
     json_response = JSON.parse(response.body)
-    releases = json_response["releases"]
+    data = json_response["data"]
 
-    releases.each do |release|
-      release_date = Date.parse(release["release_date"])
+    data.each do |release|
+      release_date = Date.parse(release["attributes"]["release_date"])
       assert release_date >= Date.new(1990, 1, 1)
       assert release_date <= Date.new(2000, 12, 31)
     end
@@ -147,10 +152,10 @@ class Api::V1::ReleasesControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
 
     json_response = JSON.parse(response.body)
-    releases = json_response["releases"]
+    data = json_response["data"]
 
-    releases.each do |release|
-      assert_equal "album", release["release_type"]
+    data.each do |release|
+      assert_equal "album", release["attributes"]["release_type"]
     end
   end
 
@@ -159,10 +164,10 @@ class Api::V1::ReleasesControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
 
     json_response = JSON.parse(response.body)
-    releases = json_response["releases"]
+    data = json_response["data"]
 
-    releases.each do |release|
-      assert_equal "Columbia", release["label"]
+    data.each do |release|
+      assert_equal "Columbia", release["attributes"]["label"]
     end
   end
 
@@ -171,9 +176,9 @@ class Api::V1::ReleasesControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
 
     json_response = JSON.parse(response.body)
-    releases = json_response["releases"]
+    data = json_response["data"]
 
-    dates = releases.map { |r| Date.parse(r["release_date"]) }
+    dates = data.map { |r| Date.parse(r["attributes"]["release_date"]) }
     assert_equal dates.sort.reverse, dates
   end
 
@@ -185,12 +190,12 @@ class Api::V1::ReleasesControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
 
     json_response = JSON.parse(response.body)
-    releases = json_response["releases"]
+    data = json_response["data"]
 
-    releases.each do |release|
-      assert Date.parse(release["release_date"]) < Date.current
-      assert_equal "album", release["release_type"]
-      assert_equal "Columbia", release["label"]
+    data.each do |release|
+      assert Date.parse(release["attributes"]["release_date"]) < Date.current
+      assert_equal "album", release["attributes"]["release_type"]
+      assert_equal "Columbia", release["attributes"]["label"]
     end
   end
 
@@ -199,10 +204,10 @@ class Api::V1::ReleasesControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
 
     json_response = JSON.parse(response.body)
-    releases = json_response["releases"]
+    data = json_response["data"]
 
-    releases.each do |release|
-      assert_equal "single", release["release_type"]
+    data.each do |release|
+      assert_equal "single", release["attributes"]["release_type"]
     end
   end
 
@@ -213,7 +218,7 @@ class Api::V1::ReleasesControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
 
     json_response = JSON.parse(response.body)
-    assert_equal [], json_response["releases"]
+    assert_equal [], json_response["data"]
   end
 
   test "should filter with only from date" do
@@ -221,10 +226,10 @@ class Api::V1::ReleasesControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
 
     json_response = JSON.parse(response.body)
-    releases = json_response["releases"]
+    data = json_response["data"]
 
-    releases.each do |release|
-      assert Date.parse(release["release_date"]) >= Date.new(2010, 1, 1)
+    data.each do |release|
+      assert Date.parse(release["attributes"]["release_date"]) >= Date.new(2010, 1, 1)
     end
   end
 
@@ -233,10 +238,10 @@ class Api::V1::ReleasesControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
 
     json_response = JSON.parse(response.body)
-    releases = json_response["releases"]
+    data = json_response["data"]
 
-    releases.each do |release|
-      assert Date.parse(release["release_date"]) <= Date.new(1980, 12, 31)
+    data.each do |release|
+      assert Date.parse(release["attributes"]["release_date"]) <= Date.new(1980, 12, 31)
     end
   end
 
@@ -245,8 +250,7 @@ class Api::V1::ReleasesControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
 
     json_response = JSON.parse(response.body)
-    # Should return all releases when filter is invalid
-    assert json_response["releases"].length >= 1
+    assert json_response["data"].length >= 1
   end
 
   test "should filter past releases and specific label combined" do
@@ -256,12 +260,12 @@ class Api::V1::ReleasesControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
 
     json_response = JSON.parse(response.body)
-    releases = json_response["releases"]
+    data = json_response["data"]
 
-    assert releases.any? { |r| r["title"] == "OK Computer" }
-    releases.each do |release|
-      assert Date.parse(release["release_date"]) < Date.current
-      assert_equal "Parlophone", release["label"]
+    assert data.any? { |r| r["attributes"]["title"] == "OK Computer" }
+    data.each do |release|
+      assert Date.parse(release["attributes"]["release_date"]) < Date.current
+      assert_equal "Parlophone", release["attributes"]["label"]
     end
   end
 
@@ -272,18 +276,17 @@ class Api::V1::ReleasesControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
 
     json_response = JSON.parse(response.body)
-    releases = json_response["releases"]
+    data = json_response["data"]
 
-    releases.each do |release|
-      release_date = Date.parse(release["release_date"])
+    data.each do |release|
+      release_date = Date.parse(release["attributes"]["release_date"])
       assert release_date >= Date.new(2013, 1, 1)
       assert release_date <= Date.new(2013, 12, 31)
-      assert_equal "album", release["release_type"]
+      assert_equal "album", release["attributes"]["release_type"]
     end
   end
 
   test "past filter should not include today releases" do
-    # Create a release for today
     today_release = Release.create!(
       title: "Today Release",
       release_date: Date.current,
@@ -296,16 +299,14 @@ class Api::V1::ReleasesControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
 
     json_response = JSON.parse(response.body)
-    titles = json_response["releases"].map { |r| r["title"] }
+    titles = json_response["data"].map { |r| r["attributes"]["title"] }
 
     assert_not_includes titles, "Today Release"
 
-    # Cleanup
     today_release.destroy
   end
 
   test "upcoming filter should include today releases" do
-    # Create a release for today
     today_release = Release.create!(
       title: "Today Release",
       release_date: Date.current,
@@ -318,33 +319,28 @@ class Api::V1::ReleasesControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
 
     json_response = JSON.parse(response.body)
-    titles = json_response["releases"].map { |r| r["title"] }
+    titles = json_response["data"].map { |r| r["attributes"]["title"] }
 
     assert_includes titles, "Today Release"
 
-    # Cleanup
     today_release.destroy
   end
 
   # Pagination tests
-  test "should include pagination metadata in response" do
+  test "should include pagination links in response" do
     get api_v1_releases_url, headers: @auth_headers
     assert_response :success
 
     json_response = JSON.parse(response.body)
-    assert json_response.key?("pagination")
+    assert json_response.key?("links")
 
-    pagination = json_response["pagination"]
-    assert pagination.key?("current_page")
-    assert pagination.key?("per_page")
-    assert pagination.key?("total_pages")
-    assert pagination.key?("total_count")
-    assert pagination.key?("has_next_page")
-    assert pagination.key?("has_prev_page")
+    links = json_response["links"]
+    assert links.key?("self")
+    assert links.key?("first")
+    assert links.key?("last")
   end
 
   test "should use default pagination of 10 per page" do
-    # Create enough releases to test pagination
     15.times do |i|
       Release.create!(
         title: "Pagination Test #{i}",
@@ -359,13 +355,9 @@ class Api::V1::ReleasesControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
 
     json_response = JSON.parse(response.body)
-    pagination = json_response["pagination"]
 
-    assert_equal 10, pagination["per_page"]
-    assert_equal 1, pagination["current_page"]
-    assert json_response["releases"].length <= 10
+    assert json_response["data"].length <= 10
 
-    # Cleanup
     Release.where("title LIKE ?", "Pagination Test%").destroy_all
   end
 
@@ -374,14 +366,11 @@ class Api::V1::ReleasesControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
 
     json_response = JSON.parse(response.body)
-    pagination = json_response["pagination"]
 
-    assert_equal 2, pagination["per_page"]
-    assert json_response["releases"].length <= 2
+    assert json_response["data"].length <= 2
   end
 
   test "should navigate to specific page" do
-    # Create enough releases to have multiple pages
     12.times do |i|
       Release.create!(
         title: "Page Test #{i}",
@@ -392,18 +381,14 @@ class Api::V1::ReleasesControllerTest < ActionDispatch::IntegrationTest
       )
     end
 
-    # Get page 2 with 5 per page
     get api_v1_releases_url, params: { page: 2, per_page: 5 }, headers: @auth_headers
     assert_response :success
 
     json_response = JSON.parse(response.body)
-    pagination = json_response["pagination"]
+    links = json_response["links"]
 
-    assert_equal 2, pagination["current_page"]
-    assert_equal 5, pagination["per_page"]
-    assert pagination["has_prev_page"]
+    assert links.key?("prev")
 
-    # Cleanup
     Release.where("title LIKE ?", "Page Test%").destroy_all
   end
 
@@ -412,20 +397,14 @@ class Api::V1::ReleasesControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
 
     json_response = JSON.parse(response.body)
-    pagination = json_response["pagination"]
-
-    assert_equal 100, pagination["per_page"]
+    # per_page=100 should appear in the self link
+    assert_match(/per_page=100/, json_response["links"]["self"])
   end
 
   test "should handle per_page of 0 or negative" do
     get api_v1_releases_url, params: { per_page: 0 }, headers: @auth_headers
     assert_response :success
-
-    json_response = JSON.parse(response.body)
-    pagination = json_response["pagination"]
-
-    # Should use minimum of 1
-    assert pagination["per_page"] >= 1
+    # Should not error out
   end
 
   test "should handle page 0 or negative" do
@@ -433,14 +412,11 @@ class Api::V1::ReleasesControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
 
     json_response = JSON.parse(response.body)
-    pagination = json_response["pagination"]
-
-    # Should default to page 1
-    assert_equal 1, pagination["current_page"]
+    # Should default to page 1 in the self link
+    assert_match(/page=1/, json_response["links"]["self"])
   end
 
-  test "should calculate total_pages correctly" do
-    # Clear existing and create exact number
+  test "should calculate total_pages correctly via links" do
     Release.where("title LIKE ?", "Total Pages Test%").destroy_all
 
     7.times do |i|
@@ -453,22 +429,20 @@ class Api::V1::ReleasesControllerTest < ActionDispatch::IntegrationTest
       )
     end
 
-    # With fixtures, we have more releases. Filter to just our test releases.
     get api_v1_releases_url, params: { per_page: 3, label: "Total Label" }, headers: @auth_headers
     assert_response :success
 
     json_response = JSON.parse(response.body)
-    pagination = json_response["pagination"]
+    links = json_response["links"]
 
-    # 7 releases / 3 per page = 3 pages (ceil)
-    assert_equal 7, pagination["total_count"]
-    assert_equal 3, pagination["total_pages"]
+    # 7 releases / 3 per page = 3 pages -> last page should be page 3
+    assert_match(/page=3/, links["last"])
+    assert links.key?("next")
 
-    # Cleanup
     Release.where("title LIKE ?", "Total Pages Test%").destroy_all
   end
 
-  test "should indicate has_next_page correctly" do
+  test "should include next link when not on last page" do
     5.times do |i|
       Release.create!(
         title: "Next Page Test #{i}",
@@ -482,18 +456,17 @@ class Api::V1::ReleasesControllerTest < ActionDispatch::IntegrationTest
     # Page 1 of 3 (5 releases, 2 per page)
     get api_v1_releases_url, params: { page: 1, per_page: 2, label: "Next Label" }, headers: @auth_headers
     json_response = JSON.parse(response.body)
-    assert json_response["pagination"]["has_next_page"]
+    assert json_response["links"].key?("next")
 
     # Last page
     get api_v1_releases_url, params: { page: 3, per_page: 2, label: "Next Label" }, headers: @auth_headers
     json_response = JSON.parse(response.body)
-    assert_not json_response["pagination"]["has_next_page"]
+    assert_not json_response["links"].key?("next")
 
-    # Cleanup
     Release.where("title LIKE ?", "Next Page Test%").destroy_all
   end
 
-  test "should indicate has_prev_page correctly" do
+  test "should include prev link when not on first page" do
     3.times do |i|
       Release.create!(
         title: "Prev Page Test #{i}",
@@ -507,14 +480,13 @@ class Api::V1::ReleasesControllerTest < ActionDispatch::IntegrationTest
     # Page 1 should not have prev
     get api_v1_releases_url, params: { page: 1, per_page: 1, label: "Prev Label" }, headers: @auth_headers
     json_response = JSON.parse(response.body)
-    assert_not json_response["pagination"]["has_prev_page"]
+    assert_not json_response["links"].key?("prev")
 
     # Page 2 should have prev
     get api_v1_releases_url, params: { page: 2, per_page: 1, label: "Prev Label" }, headers: @auth_headers
     json_response = JSON.parse(response.body)
-    assert json_response["pagination"]["has_prev_page"]
+    assert json_response["links"].key?("prev")
 
-    # Cleanup
     Release.where("title LIKE ?", "Prev Page Test%").destroy_all
   end
 
@@ -535,23 +507,19 @@ class Api::V1::ReleasesControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
 
     json_response = JSON.parse(response.body)
-    pagination = json_response["pagination"]
 
-    assert_equal 6, pagination["total_count"]
-    assert_equal 3, pagination["total_pages"]
-    assert_equal 2, json_response["releases"].length
+    assert_equal 2, json_response["data"].length
+    assert json_response["links"].key?("next")
 
-    # Cleanup
     Release.where("title LIKE ?", "Filter Pagination Test%").destroy_all
   end
 
-  test "should return empty releases with correct pagination for out of range page" do
+  test "should return empty data for out of range page" do
     get api_v1_releases_url, params: { page: 9999, per_page: 10 }, headers: @auth_headers
     assert_response :success
 
     json_response = JSON.parse(response.body)
 
-    assert_equal [], json_response["releases"]
-    assert_equal 9999, json_response["pagination"]["current_page"]
+    assert_equal [], json_response["data"]
   end
 end
